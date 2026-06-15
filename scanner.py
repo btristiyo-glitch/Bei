@@ -2,11 +2,15 @@ import pandas as pd
 import yfinance as yf
 import requests
 import os
+import csv
 
+from datetime import datetime
 from ta.momentum import RSIIndicator
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+CSV_FILE = "signals.csv"
 
 def send(msg):
     requests.post(
@@ -20,10 +24,56 @@ def send(msg):
     )
 
 # ==========================
-# LOAD TICKERS
+# CSV INIT
+# ==========================
+
+if not os.path.exists(CSV_FILE):
+
+    with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
+
+        writer = csv.writer(f)
+
+        writer.writerow([
+            "date",
+            "ticker",
+            "score",
+            "rsi",
+            "price",
+            "rvol"
+        ])
+
+def save_signal(
+    ticker,
+    score,
+    rsi,
+    price,
+    rvol
+):
+
+    with open(
+        CSV_FILE,
+        "a",
+        newline="",
+        encoding="utf-8"
+    ) as f:
+
+        writer = csv.writer(f)
+
+        writer.writerow([
+            datetime.now().strftime("%Y-%m-%d"),
+            ticker,
+            score,
+            rsi,
+            price,
+            rvol
+        ])
+
+# ==========================
+# LOAD STOCKS
 # ==========================
 
 with open("stocks.txt", "r") as f:
+
     STOCKS = [
         x.strip()
         for x in f.readlines()
@@ -33,6 +83,10 @@ with open("stocks.txt", "r") as f:
 results = []
 high_conviction = []
 extreme = []
+
+# ==========================
+# SCAN
+# ==========================
 
 for stock in STOCKS:
 
@@ -79,7 +133,10 @@ for stock in STOCKS:
         )
 
         # Volume
-        volume_now = float(volume.iloc[-1])
+        volume_now = float(
+            volume.iloc[-1]
+        )
+
         avg_volume = float(
             volume.tail(20).mean()
         )
@@ -89,12 +146,14 @@ for stock in STOCKS:
 
         rvol = volume_now / avg_volume
 
-        # Breakout 20 hari
+        # Breakout High 20 Hari
         high20 = float(
             close.tail(20).max()
         )
 
-        breakout = price >= high20
+        breakout = (
+            price >= high20
+        )
 
         # ==========================
         # SCORING
@@ -125,15 +184,14 @@ for stock in STOCKS:
             rvol * 5
         )
 
-        # Harga > EMA20
+        # Trend
         if price > ema20:
             score += 10
 
-        # EMA20 > EMA50
         if ema20 > ema50:
             score += 10
 
-        # Breakout 20 hari
+        # Breakout
         if breakout:
             score += 15
 
@@ -153,11 +211,9 @@ for stock in STOCKS:
 
         results.append(item)
 
-        # High conviction
         if score >= 80:
             high_conviction.append(item)
 
-        # Extreme oversold
         if rsi_now < 20:
             extreme.append(item)
 
@@ -165,7 +221,7 @@ for stock in STOCKS:
         continue
 
 # ==========================
-# TOP SETUP
+# SORT
 # ==========================
 
 results = sorted(
@@ -174,11 +230,29 @@ results = sorted(
     reverse=True
 )
 
+# ==========================
+# SAVE TOP 10 TO CSV
+# ==========================
+
+for item in results[:10]:
+
+    save_signal(
+        item["ticker"],
+        item["score"],
+        item["rsi"],
+        item["price"],
+        item["rvol"]
+    )
+
+# ==========================
+# TELEGRAM TOP SETUP
+# ==========================
+
 msg1 = "🏆 TOP 10 SETUP BEI\n\n"
 
 for item in results[:10]:
 
-    tv = (
+    tv_link = (
         f"https://www.tradingview.com/chart/?symbol=IDX:"
         f"{item['ticker']}"
     )
@@ -196,7 +270,7 @@ for item in results[:10]:
         f"RVOL : {item['rvol']}x\n"
         f"Harga : Rp {item['price']:,.0f}\n"
         f"{breakout_text}\n"
-        f"{tv}\n\n"
+        f"{tv_link}\n\n"
     )
 
 send(msg1)
@@ -214,7 +288,7 @@ if high_conviction:
     )
 
     msg2 = (
-        "🔥 HIGH CONVICTION SETUP\n\n"
+        "🔥 HIGH CONVICTION\n\n"
     )
 
     for item in high_conviction[:10]:
@@ -252,3 +326,8 @@ if extreme:
         )
 
     send(msg3)
+
+print(
+    f"Scan selesai. "
+    f"Total saham: {len(results)}"
+        )
