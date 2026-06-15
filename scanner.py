@@ -52,7 +52,7 @@ for stock in STOCKS:
 
         rsi_now = float(rsi.iloc[-1])
 
-        if rsi_now >= 15:
+        if rsi_now >= 20:
             continue
 
         price = float(close.iloc[-1])
