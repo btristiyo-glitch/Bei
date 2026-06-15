@@ -2,7 +2,7 @@ name: BEI scanner
 
 on:
   schedule:
-  - cron: "5 10 * * 1-5"
+  - cron: "30 09 * * 1-5"
 
   workflow_dispatch:
 
