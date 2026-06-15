@@ -14,23 +14,20 @@ def send(msg):
         json={
             "chat_id": CHAT_ID,
             "text": msg
-        }
+        },
+        timeout=30
     )
 
-stocks = [
-    "BBCA.JK",
-    "BBRI.JK",
-    "BMRI.JK",
-    "TLKM.JK",
-    "ANTM.JK",
-    "ASII.JK",
-    "BRIS.JK",
-    "MDKA.JK"
-]
+with open("stocks.txt", "r") as f:
+    STOCKS = [
+        line.strip()
+        for line in f.readlines()
+        if line.strip()
+    ]
 
-msg = "RSI CHECK\n\n"
+results = []
 
-for stock in stocks:
+for stock in STOCKS:
 
     try:
 
@@ -42,6 +39,9 @@ for stock in stocks:
             progress=False
         )
 
+        if len(df) < 30:
+            continue
+
         close = df["Close"].squeeze()
 
         rsi = RSIIndicator(
@@ -51,10 +51,30 @@ for stock in stocks:
 
         rsi_now = float(rsi.iloc[-1])
 
-        msg += f"{stock} = RSI {rsi_now:.2f}\n"
+        price = float(close.iloc[-1])
 
-    except Exception as e:
+        results.append({
+            "ticker": stock.replace(".JK", ""),
+            "rsi": round(rsi_now, 2),
+            "price": round(price, 2)
+        })
 
-        msg += f"{stock} ERROR\n"
+    except:
+        continue
 
-send(msg)
+results = sorted(
+    results,
+    key=lambda x: x["rsi"]
+)
+
+message = "🇮🇩 TOP 20 RSI(4) TERENDAH BEI\n\n"
+
+for item in results[:20]:
+
+    message += (
+        f"{item['ticker']}\n"
+        f"RSI(4): {item['rsi']}\n"
+        f"Harga: Rp {item['price']:,.0f}\n\n"
+    )
+
+send(message)
