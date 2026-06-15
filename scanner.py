@@ -14,7 +14,7 @@ def send(msg):
         json={
             "chat_id": CHAT_ID,
             "text": msg,
-            "disable_web_page_preview": True
+            "disable_web_page_preview": False
         },
         timeout=30
     )
@@ -25,12 +25,13 @@ def send(msg):
 
 with open("stocks.txt", "r") as f:
     STOCKS = [
-        line.strip()
-        for line in f.readlines()
-        if line.strip()
+        x.strip()
+        for x in f.readlines()
+        if x.strip()
     ]
 
 results = []
+high_conviction = []
 extreme = []
 
 for stock in STOCKS:
@@ -51,6 +52,8 @@ for stock in STOCKS:
         close = df["Close"].squeeze()
         volume = df["Volume"].squeeze()
 
+        price = float(close.iloc[-1])
+
         # RSI(4)
         rsi_series = RSIIndicator(
             close,
@@ -60,25 +63,38 @@ for stock in STOCKS:
         rsi_now = float(rsi_series.iloc[-1])
         rsi_prev = float(rsi_series.iloc[-2])
 
-        price = float(close.iloc[-1])
-
         # EMA
         ema20 = float(
-            close.ewm(span=20, adjust=False).mean().iloc[-1]
+            close.ewm(
+                span=20,
+                adjust=False
+            ).mean().iloc[-1]
         )
 
         ema50 = float(
-            close.ewm(span=50, adjust=False).mean().iloc[-1]
+            close.ewm(
+                span=50,
+                adjust=False
+            ).mean().iloc[-1]
         )
 
         # Volume
         volume_now = float(volume.iloc[-1])
-        avg_volume = float(volume.tail(20).mean())
+        avg_volume = float(
+            volume.tail(20).mean()
+        )
 
-        if avg_volume == 0:
+        if avg_volume <= 0:
             continue
 
         rvol = volume_now / avg_volume
+
+        # Breakout 20 hari
+        high20 = float(
+            close.tail(20).max()
+        )
+
+        breakout = price >= high20
 
         # ==========================
         # SCORING
@@ -87,7 +103,7 @@ for stock in STOCKS:
         score = 0
 
         # RSI rendah (0-40)
-        rsi_score = max(
+        score += max(
             0,
             min(
                 40,
@@ -95,10 +111,9 @@ for stock in STOCKS:
             )
         )
 
-        score += rsi_score
-
         # RSI rebound (0-20)
         if rsi_now > rsi_prev:
+
             score += min(
                 20,
                 (rsi_now - rsi_prev) * 5
@@ -110,7 +125,7 @@ for stock in STOCKS:
             rvol * 5
         )
 
-        # Close > EMA20
+        # Harga > EMA20
         if price > ema20:
             score += 10
 
@@ -118,24 +133,33 @@ for stock in STOCKS:
         if ema20 > ema50:
             score += 10
 
-        ticker = stock.replace(".JK", "")
+        # Breakout 20 hari
+        if breakout:
+            score += 15
 
-        results.append({
+        ticker = stock.replace(
+            ".JK",
+            ""
+        )
+
+        item = {
             "ticker": ticker,
             "score": round(score, 1),
             "rsi": round(rsi_now, 2),
             "price": round(price, 2),
-            "rvol": round(rvol, 2)
-        })
+            "rvol": round(rvol, 2),
+            "breakout": breakout
+        }
 
-        # EXTREME OVERSOLD
+        results.append(item)
+
+        # High conviction
+        if score >= 80:
+            high_conviction.append(item)
+
+        # Extreme oversold
         if rsi_now < 20:
-
-            extreme.append({
-                "ticker": ticker,
-                "rsi": round(rsi_now, 2),
-                "price": round(price, 2)
-            })
+            extreme.append(item)
 
     except Exception:
         continue
@@ -150,19 +174,59 @@ results = sorted(
     reverse=True
 )
 
-msg = "🏆 TOP 10 SETUP BEI\n\n"
+msg1 = "🏆 TOP 10 SETUP BEI\n\n"
 
 for item in results[:10]:
 
-    msg += (
-        f"#{item['ticker']}\n"
-        f"Score : {item['score']}/100\n"
-        f"RSI(4): {item['rsi']}\n"
-        f"RVOL : {item['rvol']}x\n"
-        f"Harga: Rp {item['price']:,.0f}\n\n"
+    tv = (
+        f"https://www.tradingview.com/chart/?symbol=IDX:"
+        f"{item['ticker']}"
     )
 
-send(msg)
+    breakout_text = (
+        "🚀 Breakout20"
+        if item["breakout"]
+        else "-"
+    )
+
+    msg1 += (
+        f"#{item['ticker']}\n"
+        f"Score : {item['score']}\n"
+        f"RSI(4): {item['rsi']}\n"
+        f"RVOL : {item['rvol']}x\n"
+        f"Harga : Rp {item['price']:,.0f}\n"
+        f"{breakout_text}\n"
+        f"{tv}\n\n"
+    )
+
+send(msg1)
+
+# ==========================
+# HIGH CONVICTION
+# ==========================
+
+if high_conviction:
+
+    high_conviction = sorted(
+        high_conviction,
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    msg2 = (
+        "🔥 HIGH CONVICTION SETUP\n\n"
+    )
+
+    for item in high_conviction[:10]:
+
+        msg2 += (
+            f"{item['ticker']}\n"
+            f"Score : {item['score']}\n"
+            f"RSI : {item['rsi']}\n"
+            f"RVOL : {item['rvol']}x\n\n"
+        )
+
+    send(msg2)
 
 # ==========================
 # EXTREME OVERSOLD
@@ -175,14 +239,16 @@ if extreme:
         key=lambda x: x["rsi"]
     )
 
-    msg2 = "🚨 EXTREME OVERSOLD\n\n"
+    msg3 = (
+        "🚨 EXTREME OVERSOLD\n\n"
+    )
 
     for item in extreme[:10]:
 
-        msg2 += (
+        msg3 += (
             f"{item['ticker']}\n"
             f"RSI(4): {item['rsi']}\n"
-            f"Harga: Rp {item['price']:,.0f}\n\n"
+            f"Harga : Rp {item['price']:,.0f}\n\n"
         )
 
-    send(msg2)
+    send(msg3)
