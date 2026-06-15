@@ -9,21 +9,12 @@ from ta.momentum import RSIIndicator
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-STOCKS = [
-    "AADI.JK","ACES.JK","ADMR.JK","ADRO.JK","AKRA.JK","AMMN.JK","AMRT.JK","ANTM.JK",
-    "ARTO.JK","ASII.JK","AVIA.JK","BBCA.JK","BBNI.JK","BBRI.JK","BBTN.JK","BMRI.JK",
-    "BRIS.JK","BRMS.JK","BREN.JK","BRPT.JK","BSDE.JK","BUKA.JK","BUMI.JK","CBDK.JK",
-    "CMRY.JK","CPIN.JK","CTRA.JK","CUAN.JK","DEWA.JK","DSSA.JK","DSNG.JK","ELSA.JK",
-    "EMTK.JK","ENRG.JK","ERAA.JK","ESSA.JK","EXCL.JK","GGRM.JK","GOTO.JK","HEAL.JK",
-    "HRTA.JK","HRUM.JK","ICBP.JK","INCO.JK","INDF.JK","INDY.JK","INKP.JK","INTP.JK",
-    "ISAT.JK","ITMG.JK","JPFA.JK","JSMR.JK","KIJA.JK","KLBF.JK","KPIG.JK","MAPA.JK",
-    "MAPI.JK","MBMA.JK","MDKA.JK","MEDC.JK","MIKA.JK","MYOR.JK","PANI.JK","PGAS.JK",
-    "PGEO.JK","PNLF.JK","PTBA.JK","PTRO.JK","PWON.JK","RAJA.JK","RATU.JK","SCMA.JK",
-    "SIDO.JK","SMGR.JK","SMRA.JK","SSIA.JK","TAPG.JK","TLKM.JK","TOWR.JK","TPIA.JK",
-    "UNTR.JK","AALI.JK","ADHI.JK","BBYB.JK","BKSL.JK","DGIK.JK","DMAS.JK","LSIP.JK",
-    "MIDI.JK","MTEL.JK","PGJO.JK","PNBN.JK","PTPP.JK","SMDR.JK","TKIM.JK","UNVR.JK",
-    "WIKA.JK","WSKT.JK"
-]
+with open("stocks.txt", "r") as f:
+    STOCKS = [
+        line.strip()
+        for line in f.readlines()
+        if line.strip()
+    ]
 
 def send(msg):
     requests.post(
