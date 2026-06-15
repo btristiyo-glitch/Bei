@@ -1,5 +1,4 @@
-ccxt
 pandas
-ta
 requests
+ta
 yfinance
