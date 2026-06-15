@@ -59,9 +59,7 @@ for stock in STOCKS:
         volume_now = float(df["Volume"].iloc[-1])
         avg_volume = float(df["Volume"].tail(20).mean())
 
-        if volume_now < avg_volume:
-            continue
-
+        
         results.append({
             "ticker": stock.replace(".JK", ""),
             "rsi": round(rsi_now, 2),
