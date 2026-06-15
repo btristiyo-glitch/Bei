@@ -10,11 +10,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 with open("stocks.txt", "r") as f:
-    STOCKS = [
-        line.strip()
-        for line in f.readlines()
-        if line.strip()
-    ]
+    STOCKS = [x.strip() for x in f if x.strip()]
 
 def send(msg):
     requests.post(
@@ -52,7 +48,7 @@ for stock in STOCKS:
 
         rsi_now = float(rsi.iloc[-1])
 
-        if rsi_now >= 20:
+        if rsi_now >= 25:
             continue
 
         price = float(close.iloc[-1])
