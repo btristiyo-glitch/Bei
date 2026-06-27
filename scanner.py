@@ -10,7 +10,10 @@ from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+CHAT_IDS = [
+    "6262086905",   # Anda
+    "6003751935",   # Teman 1
+]
 CSV_FILE = "signals.csv"
 ALERT_FILE = "alerts.csv"
 BATCH_SIZE = 3
@@ -20,6 +23,7 @@ def send(msg, parse_mode="Markdown"):
     for i in range(0, len(msg), 4000):
         chunk = msg[i:i+4000]
         for attempt in range(3):
+            for chat_id in CHAT_IDS:
             try:
                 requests.post(
                     f"https://api.telegram.org/bot{TOKEN}/sendMessage",
