@@ -11,8 +11,8 @@ from ta.volatility import AverageTrueRange
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_IDS = [
-    "6262086905",
-    "6003751935",
+    6262086905,
+    6003751935,
 ]
 CSV_FILE = "signals.csv"
 ALERT_FILE = "alerts.csv"
@@ -22,24 +22,23 @@ REQUEST_DELAY = 3
 def send(msg, parse_mode="Markdown"):
     for i in range(0, len(msg), 4000):
         chunk = msg[i:i+4000]
-        for attempt in range(3):
-            for chat_id in CHAT_IDS:
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": chunk,
-                "disable_web_page_preview": False,
-                "parse_mode": parse_mode,
-            },
-            timeout=10,
-        )
-    except Exception:
-        pass
-                break
-            except Exception:
-                time.sleep(2)
+
+        for chat_id in CHAT_IDS:
+            for attempt in range(3):
+                try:
+                    requests.post(
+                        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                        json={
+                            "chat_id": chat_id,
+                            "text": chunk,
+                            "disable_web_page_preview": False,
+                            "parse_mode": parse_mode
+                        },
+                        timeout=10
+                    )
+                    break
+                except Exception:
+                    time.sleep(2)
 
 def fetch_data(symbol, period="6mo", interval="1d"):
     try:
