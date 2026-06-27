@@ -24,14 +24,19 @@ def send(msg, parse_mode="Markdown"):
         chunk = msg[i:i+4000]
         for attempt in range(3):
             for chat_id in CHAT_IDS:
-            try:
-                requests.post(
-                    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                    json={"chat_id": CHAT_ID, "text": chunk,
-                          "disable_web_page_preview": False,
-                          "parse_mode": parse_mode},
-                    timeout=10
-                )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": chunk,
+                "disable_web_page_preview": False,
+                "parse_mode": parse_mode,
+            },
+            timeout=10,
+        )
+    except Exception:
+        pass
                 break
             except Exception:
                 time.sleep(2)
