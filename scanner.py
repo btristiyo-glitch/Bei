@@ -4,7 +4,8 @@ import requests
 import os
 import csv
 import time
-from datetime import datetime
+import schedule
+from datetime import datetime, timedelta
 from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
 
@@ -21,10 +22,10 @@ REQUEST_DELAY = 3
 
 def send(msg, parse_mode="Markdown"):
     if not TOKEN:
-        print("TELEGRAM_TOKEN kosong - pesan tidak dikirim")
+        print("TELEGRAM_TOKEN kosong, pesan tidak dikirim")
         return False
 
-    chunks = [msg[i:i + 4000] for i in range(0, len(msg), 4000)]
+    chunks = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
     ok = True
 
     for chunk in chunks:
@@ -159,7 +160,7 @@ def get_fundamentals(ticker):
 
 
 def morning_scan():
-    print(f"\n=== MORNING SCALP SCAN {datetime.now().strftime('%H:%M')} ===")
+    print(f"\n=== MORNING SCAN {datetime.now().strftime('%H:%M')} ===")
 
     if not os.path.exists(CSV_FILE):
         with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
@@ -167,8 +168,7 @@ def morning_scan():
                 "date", "time", "ticker", "score",
                 "rsi", "price", "rvol", "gap_pct",
                 "breakout", "atr_pct", "entry_limit",
-                "stop_loss", "tp1", "tp2", "tp3",
-                "tipe", "sector", "fundamental"
+                "stop_loss", "tp1", "tp2", "tp3"
             ])
 
     if not os.path.exists("stocks.txt"):
@@ -199,8 +199,7 @@ def morning_scan():
     failed_tickers = []
 
     for i, stock in enumerate(stocks):
-        print(f"Scanning {i + 1}/{len(stocks)}: {stock}")
-
+        print(f"Scanning {i+1}/{len(stocks)}: {stock}")
         df = fetch_data(stock, period="6mo")
         if df is None:
             failed_tickers.append(stock)
@@ -235,9 +234,10 @@ def morning_scan():
             prev_20_high = float(close.shift(1).tail(20).max())
             prev_20_low = float(close.shift(1).tail(20).min())
             breakout_high = float(close.iloc[-2]) > prev_20_high
-            range_pct = ((prev_20_high - prev_20_low) / prev_20_low) * 100
 
             open_today, close_yest, gap_pct, support, _ = fetch_intraday(stock)
+
+            range_pct = ((prev_20_high - prev_20_low) / prev_20_low) * 100
 
             pbv, per, mcap = get_fundamentals(stock)
             fundamental_flag = ""
@@ -365,24 +365,11 @@ def morning_scan():
         w = csv.writer(f)
         for item in results_momentum[:10]:
             w.writerow([
-                now.strftime("%Y-%m-%d"),
-                now.strftime("%H:%M"),
-                item["ticker"],
-                item["score"],
-                item["rsi"],
-                item["price"],
-                item["rvol"],
-                item["gap_pct"],
-                item["breakout"],
-                item["atr_pct"],
-                item["entry_limit"],
-                item["stop_loss"],
-                item["tp1"],
-                item["tp2"],
-                item["tp3"],
-                item["tipe"],
-                item["sector"],
-                item["fundamental"]
+                now.strftime("%Y-%m-%d"), now.strftime("%H:%M"),
+                item["ticker"], item["score"], item["rsi"], item["price"],
+                item["rvol"], item["gap_pct"], item["breakout"],
+                item["atr_pct"], item["entry_limit"], item["stop_loss"],
+                item["tp1"], item["tp2"], item["tp3"]
             ])
 
     regime_header = "🌏 **MARKET REGIME**\n"
@@ -392,49 +379,50 @@ def morning_scan():
     regime_header += f"  Gagal: {len(failed_tickers)}\n"
     send(regime_header)
 
-    if results_momentum:
-        msg1 = "🔥 **BREAKOUT MOMENTUM - Scalping / Short Swing**\n_Entry limit + support intraday_\n\n"
-        for item in results_momentum[:8]:
-            tv = f"https://www.tradingview.com/chart/?symbol=IDX:{item['ticker']}"
-            gap_emoji = "🚀" if item["gap_pct"] > 3 else "📈" if item["gap_pct"] > 0 else "➖"
-            vol_emoji = "🔥" if item["rvol"] > 5 else "⚡" if item["rvol"] > 3 else "📊"
-            funda = f" ({item['fundamental']})" if item["fundamental"] else ""
-            rr1 = round((item["tp1"] - item["entry_limit"]) / (item["entry_limit"] - item["stop_loss"]), 2)
+    msg1 = "🔥 **BREAKOUT MOMENTUM - Daily 5-20%**\n_Entry limit + support intraday_\n\n"
+    for item in results_momentum[:8]:
+        if item["score"] < 40:
+            continue
+        tv = f"https://www.tradingview.com/chart/?symbol=IDX:{item['ticker']}"
+        gap_emoji = "🚀" if item["gap_pct"] > 3 else "📈" if item["gap_pct"] > 0 else "➖"
+        vol_emoji = "🔥" if item["rvol"] > 5 else "⚡" if item["rvol"] > 3 else "📊"
+        funda = f" ({item['fundamental']})" if item["fundamental"] else ""
+        rr1 = round((item["tp1"] - item["entry_limit"]) / (item["entry_limit"] - item["stop_loss"]), 2)
 
-            msg1 += (
-                f"{gap_emoji} **#{item['ticker']}**{funda} | Score: {item['score']}\n"
-                f"┃ Entry: Rp {item['entry_limit']:,.0f}\n"
-                f"┃ Stop:  Rp {item['stop_loss']:,.0f}\n"
-                f"┃ TP1: Rp {item['tp1']:,.0f}  TP2: Rp {item['tp2']:,.0f}\n"
-                f"┃ TP3: Rp {item['tp3']:,.0f}  R:R = {rr1}\n"
-                f"{vol_emoji} RVOL: {item['rvol']}x | Gap: {item['gap_pct']}% | ATR: {item['atr_pct']}%\n"
-                f"RSI: {item['rsi']} | Support: Rp {item['support']:,.0f}\n"
-                f"[TradingView]({tv})\n\n"
-            )
-            if len(msg1) > 3800:
-                break
-        if len(msg1) > 200:
-            send(msg1)
+        msg1 += (
+            f"{gap_emoji} **#{item['ticker']}**{funda} | Score: {item['score']}\n"
+            f"┃ Entry: Rp {item['entry_limit']:,.0f}\n"
+            f"┃ Stop:  Rp {item['stop_loss']:,.0f} (-{round((1-item['stop_loss']/item['entry_limit'])*100,1)}%)\n"
+            f"┃ TP1: Rp {item['tp1']:,.0f} (+5%)  TP2: Rp {item['tp2']:,.0f} (+10%)\n"
+            f"┃ TP3: Rp {item['tp3']:,.0f} (+15%)  R:R = {rr1}\n"
+            f"{vol_emoji} RVOL: {item['rvol']}x | Gap: {item['gap_pct']}% | ATR: {item['atr_pct']}%\n"
+            f"RSI: {item['rsi']} | Support: Rp {item['support']:,.0f}\n"
+            f"[TradingView]({tv})\n\n"
+        )
+        if len(msg1) > 3800:
+            break
+    if len(msg1) > 200:
+        send(msg1)
 
-    if results_reversal:
-        msg2 = "🔄 **REVERSAL EXTREME - Scalping 3-5%**\n_Entry di area oversold_\n\n"
-        for item in results_reversal[:6]:
-            tv = f"https://www.tradingview.com/chart/?symbol=IDX:{item['ticker']}"
-            rr1 = round((item["tp1"] - item["entry_limit"]) / (item["entry_limit"] - item["stop_loss"]), 2)
-
-            msg2 += (
-                f"📉 **#{item['ticker']}** | Score: {item['score']}\n"
-                f"┃ Entry: Rp {item['entry_limit']:,.0f}\n"
-                f"┃ Stop:  Rp {item['stop_loss']:,.0f}\n"
-                f"┃ TP1: Rp {item['tp1']:,.0f}  TP2: Rp {item['tp2']:,.0f}\n"
-                f"┃ R:R = {rr1} | RSI: {item['rsi']} | RVOL: {item['rvol']}x\n"
-                f"Harga: Rp {item['price']:,.0f}\n"
-                f"[TradingView]({tv})\n\n"
-            )
-            if len(msg2) > 3800:
-                break
-        if len(msg2) > 200:
-            send(msg2)
+    msg2 = "🔄 **REVERSAL EXTREME - Scalping 3-5%**\n_Entry di area oversold_\n\n"
+    for item in results_reversal[:6]:
+        if item["score"] < 25:
+            continue
+        tv = f"https://www.tradingview.com/chart/?symbol=IDX:{item['ticker']}"
+        rr1 = round((item["tp1"] - item["entry_limit"]) / (item["entry_limit"] - item["stop_loss"]), 2)
+        msg2 += (
+            f"📉 **#{item['ticker']}** | Score: {item['score']}\n"
+            f"┃ Entry: Rp {item['entry_limit']:,.0f}\n"
+            f"┃ Stop:  Rp {item['stop_loss']:,.0f} (-{round((1-item['stop_loss']/item['entry_limit'])*100,1)}%)\n"
+            f"┃ TP1: Rp {item['tp1']:,.0f} (+3%)  TP2: Rp {item['tp2']:,.0f} (+6%)\n"
+            f"┃ R:R = {rr1}  | RSI: {item['rsi']} | RVOL: {item['rvol']}x\n"
+            f"Harga: Rp {item['price']:,.0f}\n"
+            f"[TradingView]({tv})\n\n"
+        )
+        if len(msg2) > 3800:
+            break
+    if len(msg2) > 200:
+        send(msg2)
 
     if failed_tickers:
         fail_msg = "⚠️ **Gagal di-load**\n\n"
@@ -443,16 +431,6 @@ def morning_scan():
         if len(failed_tickers) > 10:
             fail_msg += f"  ...dan {len(failed_tickers) - 10} lainnya"
         send(fail_msg)
-
-    if not results_momentum and not results_reversal:
-        send(
-            f"⚠️ **SCALP SCAN SELESAI - TIDAK ADA SETUP**\n\n"
-            f"Ticker discan: {len(stocks)}\n"
-            f"Momentum: 0\n"
-            f"Reversal: 0\n"
-            f"Gagal load: {len(failed_tickers)}\n"
-            f"Filter masih ketat atau data belum cukup."
-        )
 
     print(f"\n✅ MORNING SCAN SELESAI - {datetime.now().strftime('%H:%M')}")
     print(f"  Momentum: {len(results_momentum)} | Reversal: {len(results_reversal)}")
