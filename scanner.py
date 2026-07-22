@@ -13,7 +13,7 @@ from ta.volatility import AverageTrueRange
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_IDS = [
     6262086905,
-    6003751935,
+    
 ]
 
 CSV_FILE = "signals.csv"
