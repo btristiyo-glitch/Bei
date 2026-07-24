@@ -1,4 +1,6 @@
 pandas
-requests
-ta
+pandas
+numpy
 yfinance
+TA-Lib
+requests
