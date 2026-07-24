@@ -1,6 +1,5 @@
 pandas
 pandas
-numpy
-yfinance
-TA-Lib
 requests
+ta
+yfinance
