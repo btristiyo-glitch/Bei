@@ -1,9 +1,3 @@
-"""
-scanner.py — IDX Intraday S&D Zone Scanner
-Metode: Supply & Demand Zone + Volume Confirmation + Accumulation/Distribution
-Author: Rewrite by Neurobro
-"""
-
 import os
 import csv
 import time
@@ -14,14 +8,11 @@ import pandas as pd
 import yfinance as yf
 
 from datetime import datetime, timedelta
-from scipy import stats
-
-# ═══════════════════════════════════════════
-# KONFIGURASI
-# ═══════════════════════════════════════════
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_IDS = [6262086905]
+CHAT_IDS = [
+    6262086905
+]
 
 CSV_FILE = "signals.csv"
 ALERT_FILE = "alerts.csv"
@@ -40,10 +31,6 @@ AD_WINDOW = 15
 MIN_ZONE_VOLUME = 100_000_000
 MIN_PRICE = 50
 
-
-# ═══════════════════════════════════════════
-# HELPER
-# ═══════════════════════════════════════════
 
 def log_error(text):
     try:
@@ -143,65 +130,95 @@ def read_sector_map():
     return sector_map
 
 
-# ═══════════════════════════════════════════
-# CORE S&D LOGIC
-# ═══════════════════════════════════════════
+def ema(series, span):
+    return series.ewm(span=span, adjust=False).mean()
+
+
+def slope_last_n(series, n=5):
+    y = series.iloc[-n:].astype(float).values
+    if len(y) < n or np.any(pd.isna(y)):
+        return 0.0
+    x = np.arange(n, dtype=float)
+    x_mean = x.mean()
+    y_mean = y.mean()
+    denom = np.sum((x - x_mean) ** 2)
+    if denom == 0:
+        return 0.0
+    num = np.sum((x - x_mean) * (y - y_mean))
+    return float(num / denom)
+
+
+def zscore(series):
+    s = series.astype(float)
+    std = s.std()
+    if std == 0 or np.isnan(std):
+        return s * 0
+    return (s - s.mean()) / std
+
 
 def find_intraday_zones(df):
     zones = []
-    vol_ma = df['Volume'].rolling(20).mean()
+    vol_ma = df["Volume"].rolling(20).mean()
 
     for i in range(3, min(LOOKBACK_CANDLES, len(df) - 2)):
-        prev = df.iloc[i-1]
+        prev = df.iloc[i - 1]
         base = df.iloc[i]
 
-        avg_vol = vol_ma.iloc[i]
-        if np.isnan(avg_vol) or avg_vol == 0:
+        avg_vol = safe_float(vol_ma.iloc[i])
+        if avg_vol is None or avg_vol == 0:
             continue
 
-        vol_ratio = base['Volume'] / avg_vol
+        base_vol = safe_float(base["Volume"])
+        if base_vol is None:
+            continue
+
+        vol_ratio = base_vol / avg_vol
         if vol_ratio < VOLUME_THRESHOLD:
             continue
 
-        range_prev = prev['High'] - prev['Low']
-        if range_prev == 0:
+        range_prev = safe_float(prev["High"] - prev["Low"])
+        if range_prev is None or range_prev == 0:
             continue
 
-        body_prev = abs(prev['Close'] - prev['Open'])
-        body_base = abs(base['Close'] - base['Open'])
+        body_prev = abs(safe_float(prev["Close"]) - safe_float(prev["Open"]))
+        body_base = abs(safe_float(base["Close"]) - safe_float(base["Open"]))
+
+        if body_prev is None or body_base is None:
+            continue
+
         body_pct_prev = body_prev / range_prev
         body_pct_base = body_base / range_prev
 
-        # DEMAND ZONE
-        if (body_pct_prev > 0.6 and
-            prev['Close'] < prev['Open'] and
-            base['Close'] > base['Open'] and
+        if (
+            body_pct_prev > 0.6 and
+            safe_float(prev["Close"]) < safe_float(prev["Open"]) and
+            safe_float(base["Close"]) > safe_float(base["Open"]) and
             body_pct_base > 0.4 and
-            base['Volume'] >= MIN_ZONE_VOLUME):
-
+            base_vol >= MIN_ZONE_VOLUME
+        ):
             zones.append({
-                'type': 'DEMAND',
-                'top': max(base['Close'], prev['Open']),
-                'bot': min(base['Open'], prev['Close']),
-                'vol_ratio': round(vol_ratio, 1),
-                'strength': 'STRONG' if vol_ratio >= 4.0 else 'MODERATE',
-                'idx': i,
+                "type": "DEMAND",
+                "top": max(safe_float(base["Close"]), safe_float(prev["Open"])),
+                "bot": min(safe_float(base["Open"]), safe_float(prev["Close"])),
+                "vol_ratio": round(vol_ratio, 1),
+                "strength": "STRONG" if vol_ratio >= 4.0 else "MODERATE",
+                "idx": i,
             })
 
-        # SUPPLY ZONE
-        elif (body_pct_prev > 0.6 and
-              prev['Close'] > prev['Open'] and
-              base['Close'] < base['Open'] and
-              body_pct_base > 0.4 and
-              base['Volume'] >= MIN_ZONE_VOLUME):
-
+        elif (
+            body_pct_prev > 0.6 and
+            safe_float(prev["Close"]) > safe_float(prev["Open"]) and
+            safe_float(base["Close"]) < safe_float(base["Open"]) and
+            body_pct_base > 0.4 and
+            base_vol >= MIN_ZONE_VOLUME
+        ):
             zones.append({
-                'type': 'SUPPLY',
-                'top': max(prev['Close'], base['Open']),
-                'bot': min(base['Close'], prev['Open']),
-                'vol_ratio': round(vol_ratio, 1),
-                'strength': 'STRONG' if vol_ratio >= 4.0 else 'MODERATE',
-                'idx': i,
+                "type": "SUPPLY",
+                "top": max(safe_float(prev["Close"]), safe_float(base["Open"])),
+                "bot": min(safe_float(base["Close"]), safe_float(prev["Open"])),
+                "vol_ratio": round(vol_ratio, 1),
+                "strength": "STRONG" if vol_ratio >= 4.0 else "MODERATE",
+                "idx": i,
             })
 
     return zones
@@ -210,56 +227,58 @@ def find_intraday_zones(df):
 def detect_accumulation_distribution(df):
     window = AD_WINDOW
 
-    mfm = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (df['High'] - df['Low'])
-    mfm = mfm.fillna(0).clip(-1, 1)
-    adl = (mfm * df['Volume']).cumsum()
+    high = df["High"].astype(float)
+    low = df["Low"].astype(float)
+    close = df["Close"].astype(float)
+    volume = df["Volume"].astype(float)
 
-    price_diff = df['Close'].diff()
-    obv = (df['Volume'] * (price_diff > 0).astype(int) * 2 - 1).cumsum()
+    hl_range = (high - low).replace(0, np.nan)
+    mfm = (((close - low) - (high - close)) / hl_range).fillna(0).clip(-1, 1)
+    adl = (mfm * volume).cumsum()
 
-    pct_change = df['Close'].pct_change().fillna(0)
-    vpt = (df['Volume'] * pct_change).cumsum()
+    price_diff = close.diff().fillna(0)
+    obv_step = np.where(price_diff > 0, volume, np.where(price_diff < 0, -volume, 0))
+    obv = pd.Series(obv_step, index=df.index).cumsum()
 
-    def get_zscore_slope(series, w=window):
-        chunk = series.iloc[-w:]
-        if chunk.std() == 0 or len(chunk) < 5:
-            return 0
-        z = (chunk - chunk.mean()) / chunk.std()
-        y = z.values[-5:]
-        x = np.arange(5)
-        if np.any(np.isnan(y)):
-            return 0
-        return stats.linregress(x, y)[0]
+    pct_change = close.pct_change().fillna(0)
+    vpt = (volume * pct_change).cumsum()
 
-    price_slope = get_zscore_slope(df['Close'])
-    adl_slope = get_zscore_slope(adl)
-    obv_slope = get_zscore_slope(obv)
-    vpt_slope = get_zscore_slope(vpt)
+    def get_slope(series):
+        chunk = series.iloc[-window:]
+        if len(chunk) < 5:
+            return 0.0
+        z = zscore(chunk)
+        return slope_last_n(z, 5)
+
+    price_slope = get_slope(close)
+    adl_slope = get_slope(adl)
+    obv_slope = get_slope(obv)
+    vpt_slope = get_slope(vpt)
 
     slopes = [adl_slope, obv_slope, vpt_slope]
     up_count = sum(s > 0 for s in slopes)
     down_count = 3 - up_count
-    avg_slope = np.mean(slopes)
+    avg_slope = float(np.mean(slopes))
 
     bull_div = price_slope < 0 and up_count >= 2
     bear_div = price_slope > 0 and down_count >= 2
 
     if up_count >= 2 and avg_slope > 0:
-        label = 'ACCUMULATING'
+        label = "ACCUMULATING"
         if bull_div:
-            label = 'ACCUMULATING (Bull Div)'
+            label = "ACCUMULATING (Bull Div)"
     elif down_count >= 2 and avg_slope < 0:
-        label = 'DISTRIBUTING'
+        label = "DISTRIBUTING"
         if bear_div:
-            label = 'DISTRIBUTING (Bear Div)'
+            label = "DISTRIBUTING (Bear Div)"
     else:
-        label = 'NEUTRAL'
+        label = "NEUTRAL"
 
     return {
-        'status': label,
-        'score': round(avg_slope, 4),
-        'up': up_count,
-        'down': down_count,
+        "status": label,
+        "score": round(avg_slope, 4),
+        "up": up_count,
+        "down": down_count,
     }
 
 
@@ -268,7 +287,7 @@ def scan_snd_ticker(ticker_symbol):
     if df is None or len(df) < 50:
         return None
 
-    current_price = safe_float(df['Close'].iloc[-1])
+    current_price = safe_float(df["Close"].iloc[-1])
     if current_price is None or current_price < MIN_PRICE:
         return None
 
@@ -280,109 +299,156 @@ def scan_snd_ticker(ticker_symbol):
     sector = sector_map.get(ticker_clean, "OTHER")
 
     result = {
-        'ticker': ticker_clean,
-        'price': round(current_price),
-        'acc_dist': acc_dist['status'],
-        'acc_score': acc_dist['score'],
-        'zone_count': len(zones),
-        'sector': sector,
-        'signals': [],
-        'watchlist': [],
+        "ticker": ticker_clean,
+        "price": round(current_price),
+        "acc_dist": acc_dist["status"],
+        "acc_score": acc_dist["score"],
+        "zone_count": len(zones),
+        "sector": sector,
+        "signals": [],
+        "watchlist": [],
     }
 
     for zone in zones:
-        in_zone = zone['bot'] <= current_price <= zone['top']
+        top = safe_float(zone["top"])
+        bot = safe_float(zone["bot"])
+        if top is None or bot is None:
+            continue
+
+        in_zone = bot <= current_price <= top
         distance_pct = 0
 
-        if zone['type'] == 'DEMAND':
-            if current_price < zone['bot']:
-                distance_pct = (zone['bot'] - current_price) / zone['bot'] * 100
-            elif current_price > zone['top']:
+        if zone["type"] == "DEMAND":
+            if current_price < bot:
+                distance_pct = (bot - current_price) / bot * 100
+            elif current_price > top:
                 continue
-        elif zone['type'] == 'SUPPLY':
-            if current_price > zone['top']:
-                distance_pct = (current_price - zone['top']) / zone['top'] * 100
-            elif current_price < zone['bot']:
+        elif zone["type"] == "SUPPLY":
+            if current_price > top:
+                distance_pct = (current_price - top) / top * 100
+            elif current_price < bot:
                 continue
 
-        # SIGNAL: harga di dalam zone
         if in_zone:
-            is_buy_setup = (zone['type'] == 'DEMAND' and 'ACCUMULATING' in acc_dist['status'])
-            is_sell_setup = (zone['type'] == 'SUPPLY' and 'DISTRIBUTING' in acc_dist['status'])
+            is_buy_setup = zone["type"] == "DEMAND" and "ACCUMULATING" in acc_dist["status"]
+            is_sell_setup = zone["type"] == "SUPPLY" and "DISTRIBUTING" in acc_dist["status"]
 
             if is_buy_setup:
                 entry = current_price
-                stop = zone['bot'] * 0.995
+                stop = bot * 0.995
                 risk = entry - stop
                 if risk <= 0:
                     continue
+
                 tp1 = entry + (1.5 * risk)
                 tp2 = entry + (2.5 * risk)
                 tp3 = entry + (4.0 * risk)
                 rr = round((tp1 - entry + (tp2 - entry) * 0.5) / (risk * 1.5), 1)
 
-                result['signals'].append({
-                    'action': 'BUY',
-                    'type': 'S&D_BREAKOUT',
-                    'zone_bot': round(zone['bot']),
-                    'zone_top': round(zone['top']),
-                    'entry': round(entry),
-                    'stop': round(stop),
-                    'tp1': round(tp1),
-                    'tp2': round(tp2),
-                    'tp3': round(tp3),
-                    'vol_ratio': zone['vol_ratio'],
-                    'strength': zone['strength'],
-                    'rr': rr,
-                    'acc_dist': acc_dist['status'],
+                result["signals"].append({
+                    "action": "BUY",
+                    "type": "S&D_BREAKOUT",
+                    "zone_bot": round(bot),
+                    "zone_top": round(top),
+                    "entry": round(entry),
+                    "stop": round(stop),
+                    "tp1": round(tp1),
+                    "tp2": round(tp2),
+                    "tp3": round(tp3),
+                    "vol_ratio": zone["vol_ratio"],
+                    "strength": zone["strength"],
+                    "rr": rr,
+                    "acc_dist": acc_dist["status"],
                 })
 
             elif is_sell_setup:
                 entry = current_price
-                stop = zone['top'] * 1.005
+                stop = top * 1.005
                 risk = stop - entry
                 if risk <= 0:
                     continue
+
                 tp1 = entry - (1.5 * risk)
                 tp2 = entry - (2.5 * risk)
                 tp3 = entry - (4.0 * risk)
                 rr = round((entry - tp1 + (entry - tp2) * 0.5) / (risk * 1.5), 1)
 
-                result['signals'].append({
-                    'action': 'SELL',
-                    'type': 'S&D_REJECTION',
-                    'zone_bot': round(zone['bot']),
-                    'zone_top': round(zone['top']),
-                    'entry': round(entry),
-                    'stop': round(stop),
-                    'tp1': round(tp1),
-                    'tp2': round(tp2),
-                    'tp3': round(tp3),
-                    'vol_ratio': zone['vol_ratio'],
-                    'strength': zone['strength'],
-                    'rr': rr,
-                    'acc_dist': acc_dist['status'],
+                result["signals"].append({
+                    "action": "SELL",
+                    "type": "S&D_REJECTION",
+                    "zone_bot": round(bot),
+                    "zone_top": round(top),
+                    "entry": round(entry),
+                    "stop": round(stop),
+                    "tp1": round(tp1),
+                    "tp2": round(tp2),
+                    "tp3": round(tp3),
+                    "vol_ratio": zone["vol_ratio"],
+                    "strength": zone["strength"],
+                    "rr": rr,
+                    "acc_dist": acc_dist["status"],
                 })
 
-        # WATCHLIST: harga mendekati zone
         elif 0 < distance_pct <= ZONE_DISTANCE_PCT:
-            direction = "mendekati demand" if zone['type'] == 'DEMAND' else "mendekati supply"
-            result['watchlist'].append({
-                'setup': f"{zone['type']} zone {direction} ({distance_pct:.1f}%)",
-                'zone': f"{round(zone['bot']):,} - {round(zone['top']):,}",
-                'vol_ratio': f"{zone['vol_ratio']}x",
-                'strength': zone['strength'],
+            direction = "mendekati demand" if zone["type"] == "DEMAND" else "mendekati supply"
+            result["watchlist"].append({
+                "setup": f"{zone['type']} zone {direction} ({distance_pct:.1f}%)",
+                "zone": f"{round(bot):,} - {round(top):,}",
+                "vol_ratio": f"{zone['vol_ratio']}x",
+                "strength": zone["strength"],
             })
 
     return result
 
 
-# ═══════════════════════════════════════════
-# MAIN SCAN — TANPA MARKET REGIME
-# ═══════════════════════════════════════════
+def init_csv_files():
+    if os.path.exists(CSV_FILE):
+        os.remove(CSV_FILE)
+
+    with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "date", "time", "ticker", "score", "signal",
+            "rsi", "price", "rvol", "gap_pct",
+            "atr_pct", "entry_limit", "stop_loss",
+            "tp1", "tp2", "tp3"
+        ])
+
+    with open(ALERT_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "ticker", "entry", "stop_loss", "tp1", "tp2", "tp3",
+            "score", "signal", "scan_time"
+        ])
+
+
+def append_signals_csv(rows):
+    now = datetime.now()
+    with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        for item in rows:
+            writer.writerow([
+                now.strftime("%Y-%m-%d"),
+                now.strftime("%H:%M"),
+                item["ticker"],
+                item["score"],
+                item["signal"],
+                item.get("rsi", 0),
+                item.get("price", 0),
+                item.get("rvol", 0),
+                item.get("gap_pct", 0),
+                item.get("atr_pct", 0),
+                item.get("entry_limit", 0),
+                item.get("stop_loss", 0),
+                item.get("tp1", 0),
+                item.get("tp2", 0),
+                item.get("tp3", 0),
+            ])
+
 
 def run_snd_scan():
     print(f"\n=== S&D SCAN {datetime.now().strftime('%H:%M')} ===")
+    init_csv_files()
 
     stocks = read_stocks()
     if not stocks:
@@ -402,21 +468,21 @@ def run_snd_scan():
             if result is None:
                 continue
 
-            if result['signals']:
-                for s in result['signals']:
-                    base_score = 70 if s['strength'] == 'STRONG' else 50
-                    if 'Bull Div' in s['acc_dist'] or 'Bear Div' in s['acc_dist']:
+            if result["signals"]:
+                for s in result["signals"]:
+                    base_score = 70 if s["strength"] == "STRONG" else 50
+                    if "Bull Div" in s["acc_dist"] or "Bear Div" in s["acc_dist"]:
                         base_score += 20
-                    s['score'] = base_score
-                    s['sector'] = result['sector']
-                    s['price'] = result['price']
-
-                    if s['action'] == 'BUY':
+                    s["score"] = base_score
+                    s["sector"] = result["sector"]
+                    s["price"] = result["price"]
+                    s["signal"] = s["action"]
+                    if s["action"] == "BUY":
                         buy_signals.append(s)
                     else:
                         sell_signals.append(s)
 
-            elif result['watchlist']:
+            elif result["watchlist"]:
                 watchlist.append(result)
 
         except Exception as e:
@@ -427,33 +493,25 @@ def run_snd_scan():
         if (i + 1) % BATCH_SIZE == 0:
             time.sleep(REQUEST_DELAY)
 
-    buy_signals = sorted(buy_signals, key=lambda x: x['score'], reverse=True)
-    sell_signals = sorted(sell_signals, key=lambda x: x['score'], reverse=True)
+    buy_signals = sorted(buy_signals, key=lambda x: x["score"], reverse=True)
+    sell_signals = sorted(sell_signals, key=lambda x: x["score"], reverse=True)
 
-    # Simpan ke CSV
     with open(ALERT_FILE, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow([
-            "ticker", "action", "entry", "stop_loss", "tp1", "tp2", "tp3",
-            "score", "vol_ratio", "strength", "rr", "acc_dist", "sector", "scan_time"
+            "ticker", "entry", "stop_loss", "tp1", "tp2", "tp3",
+            "score", "signal", "scan_time"
         ])
         for s in buy_signals + sell_signals:
             w.writerow([
-                s['ticker'], s['action'], s['entry'], s['stop'],
-                s['tp1'], s['tp2'], s['tp3'],
-                s['score'], s['vol_ratio'], s['strength'],
-                s['rr'], s['acc_dist'], s['sector'],
-                datetime.now().strftime("%Y-%m-%d %H:%M")
+                s["ticker"], s["entry"], s["stop"], s["tp1"], s["tp2"], s["tp3"],
+                s["score"], s["signal"], datetime.now().strftime("%Y-%m-%d %H:%M")
             ])
 
-    # ─── KIRIM TELEGRAM ───
-
-    # Ringkasan singkat
     summary = f"📡 **S&D INTRADAY SCAN** — {datetime.now().strftime('%d %b %H:%M')} WIB\n"
     summary += f"_Buy: {len(buy_signals)} | Sell: {len(sell_signals)} | Watch: {len(watchlist)} | Error: {len(errors)}_\n"
     send(summary)
 
-    # BUY SIGNALS
     if buy_signals:
         msg = "🟢 **S&D DEMAND ZONE — BUY SIGNALS**\n_Harga di demand zone + accumulation terkonfirmasi_\n\n"
         for s in buy_signals[:8]:
@@ -472,7 +530,6 @@ def run_snd_scan():
                 break
         send(msg)
 
-    # SELL SIGNALS
     if sell_signals:
         msg = "🔴 **S&D SUPPLY ZONE — SELL SIGNALS**\n_Harga di supply zone + distribution terkonfirmasi_\n\n"
         for s in sell_signals[:6]:
@@ -491,20 +548,18 @@ def run_snd_scan():
                 break
         send(msg)
 
-    # WATCHLIST
     if watchlist:
         msg = "📊 **S&D WATCHLIST — Mendekati Zone**\n_Harga dalam 2.5% dari S&D zone_\n\n"
-        for w in sorted(watchlist, key=lambda x: x['acc_score'], reverse=True)[:8]:
-            acc_icon = '📈' if 'ACCUMULATING' in w['acc_dist'] else '📉' if 'DISTRIBUTING' in w['acc_dist'] else '➖'
+        for w in sorted(watchlist, key=lambda x: x["acc_score"], reverse=True)[:8]:
+            acc_icon = "📈" if "ACCUMULATING" in w["acc_dist"] else "📉" if "DISTRIBUTING" in w["acc_dist"] else "➖"
             msg += f"{acc_icon} **#{w['ticker']}** @ Rp {w['price']:,} | {w['acc_dist']}\n"
-            for ws in w['watchlist'][:2]:
+            for ws in w["watchlist"][:2]:
                 msg += f"   ┃ {ws['setup']} | Zone: {ws['zone']} | Vol: {ws['vol_ratio']}\n"
             msg += "\n"
             if len(msg) > 3800:
                 break
         send(msg)
 
-    # ERRORS
     if errors:
         err_msg = "⚠️ **Gagal di-load**\n\n"
         for e in errors[:10]:
@@ -516,10 +571,6 @@ def run_snd_scan():
     print(f"\n✅ S&D SCAN SELESAI — {datetime.now().strftime('%H:%M')}")
     print(f"  Buy: {len(buy_signals)} | Sell: {len(sell_signals)} | Watch: {len(watchlist)}")
 
-
-# ═══════════════════════════════════════════
-# ALERT CHECKER
-# ═══════════════════════════════════════════
 
 def check_alerts():
     print(f"  ⌛ Alert check {datetime.now().strftime('%H:%M')}...")
@@ -596,23 +647,24 @@ def check_alerts():
     with open(ALERT_FILE, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow([
-            "ticker", "action", "entry", "stop_loss", "tp1", "tp2", "tp3",
-            "score", "vol_ratio", "strength", "rr", "acc_dist", "sector", "scan_time"
+            "ticker", "entry", "stop_loss", "tp1", "tp2", "tp3",
+            "score", "signal", "scan_time"
         ])
         for s in active_setups:
             w.writerow([
-                s.get("ticker"), s.get("action"), s.get("entry"),
-                s.get("stop_loss"), s.get("tp1"), s.get("tp2"), s.get("tp3"),
-                s.get("score"), s.get("vol_ratio"), s.get("strength"),
-                s.get("rr"), s.get("acc_dist"), s.get("sector"), s.get("scan_time")
+                s.get("ticker", ""),
+                s.get("entry", ""),
+                s.get("stop_loss", ""),
+                s.get("tp1", ""),
+                s.get("tp2", ""),
+                s.get("tp3", ""),
+                s.get("score", ""),
+                s.get("signal", ""),
+                s.get("scan_time", "")
             ])
 
     print(f"  ✅ Alert check selesai - {len(active_setups)} aktif, {len(setups) - len(active_setups)} expired")
 
-
-# ═══════════════════════════════════════════
-# SCHEDULER
-# ═══════════════════════════════════════════
 
 def schedule_jobs():
     schedule.clear()
@@ -624,10 +676,6 @@ def schedule_jobs():
         for minute in [0, 15, 30, 45]:
             schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(check_alerts)
 
-
-# ═══════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════
 
 def main():
     print("=" * 50)
