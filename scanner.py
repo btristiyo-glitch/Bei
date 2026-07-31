@@ -9,8 +9,9 @@ from datetime import datetime
 # =====================
 # CONFIG
 # =====================
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_IDS = [6262086905]
+TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
+CHAT_IDS_RAW = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+CHAT_IDS = [x.strip() for x in CHAT_IDS_RAW.split(",") if x.strip()]
 
 STOCKS_FILE = "stocks.txt"
 ERROR_LOG_FILE = "error.log"
@@ -36,12 +37,15 @@ def send_telegram(text):
     if not TOKEN:
         print("TELEGRAM_TOKEN belum diset.")
         return
+    if not CHAT_IDS:
+        print("TELEGRAM_CHAT_ID belum diset.")
+        return
 
     chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)]
     for chunk in chunks:
         for chat_id in CHAT_IDS:
             try:
-                requests.post(
+                r = requests.post(
                     f"https://api.telegram.org/bot{TOKEN}/sendMessage",
                     json={
                         "chat_id": chat_id,
@@ -51,6 +55,8 @@ def send_telegram(text):
                     },
                     timeout=15
                 )
+                if not r.ok:
+                    log_error(f"Telegram HTTP {r.status_code} | {r.text}")
             except Exception as e:
                 log_error(f"Telegram error | {e}")
 
@@ -172,7 +178,6 @@ def find_supply_demand(df):
         prev_body_pct = prev_body / prev_range
         base_body_pct = base_body / prev_range
 
-        # DEMAND
         if (
             prev["Close"] < prev["Open"] and
             base["Close"] > base["Open"] and
@@ -187,7 +192,6 @@ def find_supply_demand(df):
                 "vol_ratio": round(vol_ratio, 1)
             })
 
-        # SUPPLY
         if (
             prev["Close"] > prev["Open"] and
             base["Close"] < base["Open"] and
@@ -316,14 +320,7 @@ def build_plan(result):
         tp2 = round(close + atr_like * 2.0)
         tp3 = round(close + atr_like * 3.0)
         rr = round((tp3 - close) / max(1, close - stop_loss), 1)
-        return {
-            "entry": f"{round(entry_low)} - {round(entry_high)}",
-            "sl": stop_loss,
-            "tp1": tp1,
-            "tp2": tp2,
-            "tp3": tp3,
-            "rr": rr
-        }
+        return {"entry": f"{round(entry_low)} - {round(entry_high)}", "sl": stop_loss, "tp1": tp1, "tp2": tp2, "tp3": tp3, "rr": rr}
 
     if result["signal"] == "🔴 SELL":
         entry_low = result["supply"]["bot"] if result["supply"] else close
@@ -333,14 +330,7 @@ def build_plan(result):
         tp2 = round(close - atr_like * 2.0)
         tp3 = round(close - atr_like * 3.0)
         rr = round((close - tp3) / max(1, stop_loss - close), 1)
-        return {
-            "entry": f"{round(entry_low)} - {round(entry_high)}",
-            "sl": stop_loss,
-            "tp1": tp1,
-            "tp2": tp2,
-            "tp3": tp3,
-            "rr": rr
-        }
+        return {"entry": f"{round(entry_low)} - {round(entry_high)}", "sl": stop_loss, "tp1": tp1, "tp2": tp2, "tp3": tp3, "rr": rr}
 
     return None
 
