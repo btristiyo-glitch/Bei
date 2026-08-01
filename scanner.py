@@ -15,10 +15,12 @@ CHAT_IDS = [x.strip() for x in CHAT_IDS_RAW.split(",") if x.strip()]
 
 STOCKS_FILE = "stocks.txt"
 ERROR_LOG_FILE = "error.log"
+OUTPUT_CSV = "scan_results.csv"
+TOP10_CSV = "top10_results.csv"
 
 LOOKBACK = 120
 MIN_PRICE = 50
-VOLUME_MULTIPLIER = 2.0
+VOLUME_MULTIPLIER = 1.8
 REQUEST_DELAY = 2
 
 
@@ -81,7 +83,7 @@ def fetch_data(symbol, period="6mo", interval="1d"):
             progress=False
         )
         df = clean_df(df)
-        if df is None or len(df) < 50:
+        if df is None or len(df) < 60:
             return None
         return df
     except Exception as e:
@@ -156,6 +158,56 @@ def candle_patterns(df):
     return patterns
 
 
+def detect_structure(df, lookback=20):
+    highs = df["High"].values
+    lows = df["Low"].values
+    closes = df["Close"].values
+
+    if len(df) < lookback + 5:
+        return {
+            "bias": "neutral",
+            "bos": False,
+            "choch": False,
+            "last_swing_high": None,
+            "last_swing_low": None
+        }
+
+    recent_high = np.max(highs[-lookback - 1:-1])
+    recent_low = np.min(lows[-lookback - 1:-1])
+
+    prev_high = np.max(highs[-lookback * 2:-lookback]) if len(df) >= lookback * 2 else recent_high
+    prev_low = np.min(lows[-lookback * 2:-lookback]) if len(df) >= lookback * 2 else recent_low
+
+    last_close = closes[-1]
+    prev_close = closes[-2]
+
+    bos = False
+    choch = False
+    bias = "neutral"
+
+    if last_close > recent_high:
+        bos = True
+        bias = "bullish"
+    elif last_close < recent_low:
+        bos = True
+        bias = "bearish"
+
+    if prev_close <= prev_high and last_close > prev_high:
+        choch = True
+        bias = "bullish"
+    elif prev_close >= prev_low and last_close < prev_low:
+        choch = True
+        bias = "bearish"
+
+    return {
+        "bias": bias,
+        "bos": bos,
+        "choch": choch,
+        "last_swing_high": float(recent_high),
+        "last_swing_low": float(recent_low)
+    }
+
+
 def find_supply_demand(df):
     zones = []
     vol_ma = df["Volume"].rolling(20).mean()
@@ -171,19 +223,7 @@ def find_supply_demand(df):
         if vol_ratio < VOLUME_MULTIPLIER:
             continue
 
-        prev_body = abs(prev["Close"] - prev["Open"])
-        base_body = abs(base["Close"] - base["Open"])
-        prev_range = max(prev["High"] - prev["Low"], 1e-9)
-
-        prev_body_pct = prev_body / prev_range
-        base_body_pct = base_body / prev_range
-
-        if (
-            prev["Close"] < prev["Open"] and
-            base["Close"] > base["Open"] and
-            prev_body_pct > 0.5 and
-            base_body_pct > 0.3
-        ):
+        if prev["Close"] < prev["Open"] and base["Close"] > base["Open"]:
             zones.append({
                 "type": "DEMAND",
                 "top": max(base["Close"], prev["Open"]),
@@ -192,12 +232,7 @@ def find_supply_demand(df):
                 "vol_ratio": round(vol_ratio, 1)
             })
 
-        if (
-            prev["Close"] > prev["Open"] and
-            base["Close"] < base["Open"] and
-            prev_body_pct > 0.5 and
-            base_body_pct > 0.3
-        ):
+        if prev["Close"] > prev["Open"] and base["Close"] < base["Open"]:
             zones.append({
                 "type": "SUPPLY",
                 "top": max(prev["Close"], base["Open"]),
@@ -224,31 +259,36 @@ def latest_zones(zones):
     return supply, demand
 
 
-def confidence_score(trend, rvol_value, patterns, in_zone, near_zone):
+def confidence_score(trend, rvol_value, patterns, in_zone, near_zone, structure):
     score = 0
 
-    if "Strong Bullish" in trend:
-        score += 30
-    elif "Bullish" in trend:
-        score += 20
-    elif "Strong Bearish" in trend:
-        score += 30
-    elif "Bearish" in trend:
-        score += 20
+    if "Strong Bullish" in trend or "Strong Bearish" in trend:
+        score += 25
+    elif "Bullish" in trend or "Bearish" in trend:
+        score += 15
 
     if rvol_value >= 3:
-        score += 25
+        score += 20
     elif rvol_value >= 2:
-        score += 18
+        score += 15
     elif rvol_value >= 1.5:
         score += 10
 
-    if "Breakout Candle" in patterns or "Bullish Engulfing" in patterns or "Bearish Rejection" in patterns:
-        score += 20
-    if in_zone:
+    if "Breakout Candle" in patterns or "Bullish Engulfing" in patterns or "Hammer" in patterns or "Bearish Rejection" in patterns:
         score += 15
+
+    if in_zone:
+        score += 10
     elif near_zone:
-        score += 8
+        score += 5
+
+    if structure["bos"]:
+        score += 15
+    if structure["choch"]:
+        score += 10
+
+    if structure["bias"] in ["bullish", "bearish"]:
+        score += 5
 
     return min(100, score)
 
@@ -260,6 +300,7 @@ def calculate_signal(df):
     patterns = candle_patterns(df)
     zones = find_supply_demand(df)
     supply, demand = latest_zones(zones)
+    structure = detect_structure(df)
 
     in_demand = False
     near_demand = False
@@ -278,20 +319,28 @@ def calculate_signal(df):
         elif 0 < ((close - supply["top"]) / supply["top"]) * 100 <= 2:
             near_supply = True
 
-    bullish = trend in ["🟢 Strong Bullish", "🟢 Bullish"]
-    bearish = trend in ["🔴 Strong Bearish", "🔴 Bearish"]
-    breakout = "Breakout Candle" in patterns
-    bounce = "Bullish Engulfing" in patterns or "Hammer" in patterns
-    rejection = "Bearish Rejection" in patterns
+    bullish = trend in ["🟢 Strong Bullish", "🟢 Bullish"] or structure["bias"] == "bullish"
+    bearish = trend in ["🔴 Strong Bearish", "🔴 Bearish"] or structure["bias"] == "bearish"
 
-    if in_demand and bullish and volume_ratio >= 1.8 and (breakout or bounce):
+    breakout = "Breakout Candle" in patterns or structure["bos"]
+    reversal_bull = "Bullish Engulfing" in patterns or "Hammer" in patterns or structure["choch"]
+    reversal_bear = "Bearish Rejection" in patterns or structure["choch"]
+
+    if (in_demand or near_demand) and bullish and volume_ratio >= 1.8 and (breakout or reversal_bull):
         signal = "🟢 BUY"
-    elif in_supply and bearish and volume_ratio >= 1.8 and (breakout or rejection):
+    elif (in_supply or near_supply) and bearish and volume_ratio >= 1.8 and (breakout or reversal_bear):
         signal = "🔴 SELL"
     else:
         signal = "WATCH"
 
-    score = confidence_score(trend, volume_ratio, patterns, in_demand or in_supply, near_demand or near_supply)
+    score = confidence_score(
+        trend,
+        volume_ratio,
+        patterns,
+        in_demand or in_supply,
+        near_demand or near_supply,
+        structure
+    )
 
     return {
         "signal": signal,
@@ -304,7 +353,8 @@ def calculate_signal(df):
         "close": close,
         "e20": e20,
         "e50": e50,
-        "e200": e200
+        "e200": e200,
+        "structure": structure
     }
 
 
@@ -320,7 +370,14 @@ def build_plan(result):
         tp2 = round(close + atr_like * 2.0)
         tp3 = round(close + atr_like * 3.0)
         rr = round((tp3 - close) / max(1, close - stop_loss), 1)
-        return {"entry": f"{round(entry_low)} - {round(entry_high)}", "sl": stop_loss, "tp1": tp1, "tp2": tp2, "tp3": tp3, "rr": rr}
+        return {
+            "entry": f"{round(entry_low)} - {round(entry_high)}",
+            "sl": stop_loss,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
+            "rr": rr
+        }
 
     if result["signal"] == "🔴 SELL":
         entry_low = result["supply"]["bot"] if result["supply"] else close
@@ -330,54 +387,66 @@ def build_plan(result):
         tp2 = round(close - atr_like * 2.0)
         tp3 = round(close - atr_like * 3.0)
         rr = round((close - tp3) / max(1, stop_loss - close), 1)
-        return {"entry": f"{round(entry_low)} - {round(entry_high)}", "sl": stop_loss, "tp1": tp1, "tp2": tp2, "tp3": tp3, "rr": rr}
+        return {
+            "entry": f"{round(entry_low)} - {round(entry_high)}",
+            "sl": stop_loss,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
+            "rr": rr
+        }
 
     return None
 
 
-def format_buy(ticker, result, plan):
-    return (
-        f"📊 {ticker}\n\n"
-        f"Signal : {result['signal']}\n"
-        f"Confidence : {result['confidence']}%\n\n"
-        f"━━━━━━━━━━━━\n\n"
-        f"📍Entry\n{plan['entry']}\n\n"
-        f"🛑 Stop Loss\n{plan['sl']}\n\n"
-        f"🎯 Target\n"
-        f"TP1 {plan['tp1']}\n"
-        f"TP2 {plan['tp2']}\n"
-        f"TP3 {plan['tp3']}\n\n"
-        f"Risk Reward\n1 : {plan['rr']}\n\n"
-        f"Breakout Chance\n{result['confidence']}%\n\n"
-        f"Smart Money\n🟢 Accumulation\n\n"
-        f"Trend\n{result['trend']}\n\n"
-        f"Volume\n{result['volume']}x Average\n\n"
-        f"Aksi:\n✅ Boleh mulai cicil beli\n"
-    )
+def score_to_rank(score, signal, volume):
+    base = score
+    if signal in ["🟢 BUY", "🔴 SELL"]:
+        base += 15
+    if volume >= 2:
+        base += 10
+    elif volume >= 1.5:
+        base += 5
+    return min(100, base)
 
 
-def format_sell(ticker, result, plan):
-    return (
-        f"📊 {ticker}\n\n"
-        f"Signal : {result['signal']}\n"
-        f"Confidence : {result['confidence']}%\n\n"
-        f"━━━━━━━━━━━━\n\n"
-        f"📍Entry\n{plan['entry']}\n\n"
-        f"🛑 Stop Loss\n{plan['sl']}\n\n"
-        f"🎯 Target\n"
-        f"TP1 {plan['tp1']}\n"
-        f"TP2 {plan['tp2']}\n"
-        f"TP3 {plan['tp3']}\n\n"
-        f"Risk Reward\n1 : {plan['rr']}\n\n"
-        f"Breakout Chance\n{result['confidence']}%\n\n"
-        f"Smart Money\n🔴 Distribution\n\n"
-        f"Trend\n{result['trend']}\n\n"
-        f"Volume\n{result['volume']}x Average\n\n"
-        f"Aksi:\n❌ Jangan entry\n"
-    )
+def format_signal(ticker, result, plan):
+    if result["signal"] == "🟢 BUY":
+        return (
+            f"📊 {ticker}\n\n"
+            f"Signal : {result['signal']}\n"
+            f"Confidence : {result['confidence']}%\n"
+            f"Rank Score : {result['rank_score']}\n\n"
+            f"Entry : {plan['entry']}\n"
+            f"SL : {plan['sl']}\n"
+            f"TP1 : {plan['tp1']}\n"
+            f"TP2 : {plan['tp2']}\n"
+            f"TP3 : {plan['tp3']}\n"
+            f"R:R : 1:{plan['rr']}\n"
+            f"Trend : {result['trend']}\n"
+            f"Structure : BOS {result['structure']['bos']} | CHOCH {result['structure']['choch']} | Bias {result['structure']['bias']}\n"
+            f"Volume : {result['volume']}x\n"
+            f"Aksi : ✅ Boleh mulai cicil beli\n"
+        )
 
+    if result["signal"] == "🔴 SELL":
+        return (
+            f"📊 {ticker}\n\n"
+            f"Signal : {result['signal']}\n"
+            f"Confidence : {result['confidence']}%\n"
+            f"Rank Score : {result['rank_score']}\n\n"
+            f"Entry : {plan['entry']}\n"
+            f"SL : {plan['sl']}\n"
+            f"TP1 : {plan['tp1']}\n"
+            f"TP2 : {plan['tp2']}\n"
+            f"TP3 : {plan['tp3']}\n"
+            f"R:R : 1:{plan['rr']}\n"
+            f"Trend : {result['trend']}\n"
+            f"Structure : BOS {result['structure']['bos']} | CHOCH {result['structure']['choch']} | Bias {result['structure']['bias']}\n"
+            f"Volume : {result['volume']}x\n"
+            f"Aksi : ❌ Jangan entry\n"
+        )
 
-def format_watch(ticker, result):
     supply = "-"
     demand = "-"
     if result["supply"]:
@@ -385,22 +454,17 @@ def format_watch(ticker, result):
     if result["demand"]:
         demand = f"{round(result['demand']['bot'])} - {round(result['demand']['top'])}"
 
-    action = "❌ Jangan entry\n✔ Tunggu breakout atau pullback"
-    if result["signal"] == "WATCH":
-        if result["demand"]:
-            action = f"❌ Jangan entry\n✔ Tunggu breakout di atas {round(result['demand']['top'])}\natau pullback ke {round(result['demand']['bot'])}"
-        elif result["supply"]:
-            action = f"❌ Jangan entry\n✔ Tunggu breakdown di bawah {round(result['supply']['bot'])}\natau pullback ke {round(result['supply']['top'])}"
-
     return (
         f"⚠ {ticker}\n\n"
-        f"Signal : WATCH\n\n"
-        f"Confidence : {result['confidence']}%\n\n"
-        f"Smart Money\n⚪ Neutral\n\n"
-        f"Breakout Chance\n{result['confidence']}%\n\n"
+        f"Signal : WATCH\n"
+        f"Confidence : {result['confidence']}%\n"
+        f"Rank Score : {result['rank_score']}\n"
+        f"Trend : {result['trend']}\n"
+        f"Structure : BOS {result['structure']['bos']} | CHOCH {result['structure']['choch']} | Bias {result['structure']['bias']}\n"
         f"Supply : {supply}\n"
-        f"Demand : {demand}\n\n"
-        f"Aksi:\n{action}\n"
+        f"Demand : {demand}\n"
+        f"Volume : {result['volume']}x\n"
+        f"Aksi : ❌ Tunggu level valid\n"
     )
 
 
@@ -414,6 +478,7 @@ def scan_one(symbol):
 
     result = calculate_signal(df)
     plan = build_plan(result)
+    result["rank_score"] = score_to_rank(result["confidence"], result["signal"], result["volume"])
     return result, plan
 
 
@@ -423,7 +488,8 @@ def main():
         print("stocks.txt kosong")
         return
 
-    buys, sells, watches = [], [], []
+    all_rows = []
+    text_signals = []
 
     for s in stocks:
         try:
@@ -433,33 +499,57 @@ def main():
 
             result, plan = scanned
             ticker = s.replace(".JK", "")
+            structure = result["structure"]
 
-            if result["signal"] == "🟢 BUY":
-                buys.append(format_buy(ticker, result, plan))
-            elif result["signal"] == "🔴 SELL":
-                sells.append(format_sell(ticker, result, plan))
-            else:
-                watches.append(format_watch(ticker, result))
+            row = {
+                "ticker": ticker,
+                "signal": result["signal"],
+                "confidence": result["confidence"],
+                "rank_score": result["rank_score"],
+                "trend": result["trend"],
+                "volume": result["volume"],
+                "bos": structure["bos"],
+                "choch": structure["choch"],
+                "bias": structure["bias"]
+            }
+            all_rows.append(row)
+
+            text_signals.append(format_signal(ticker, result, plan))
 
             time.sleep(REQUEST_DELAY)
 
         except Exception as e:
             log_error(f"scan_one {s} | {e}")
 
-    summary = (
-        f"📡 S&D INTRADAY SCAN — {datetime.now().strftime('%d %b %H:%M')} WIB\n\n"
-        f"🟢 BUY : {len(buys)} | 🔴 SELL : {len(sells)} | 👀 WATCH : {len(watches)}\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
+    if not all_rows:
+        send_telegram("Tidak ada sinyal valid hari ini.")
+        return
+
+    df_all = pd.DataFrame(all_rows).sort_values(
+        ["rank_score", "confidence", "volume"],
+        ascending=False
     )
+    df_top10 = df_all.head(10).copy()
+
+    df_all.to_csv(OUTPUT_CSV, index=False)
+    df_top10.to_csv(TOP10_CSV, index=False)
+
+    now = datetime.now().strftime("%d %b %H:%M")
+    summary = (
+        f"📡 DAILY STOCK RANKING - {now} WIB\n\n"
+        f"Top 10 saham terbaik hari ini:\n\n"
+    )
+
+    for i, row in enumerate(df_top10.itertuples(index=False), start=1):
+        summary += (
+            f"{i}. {row.ticker} - {row.signal} - Score {row.rank_score} - Conf {row.confidence}% - Vol {row.volume}x\n"
+        )
 
     send_telegram(summary)
 
-    if buys:
-        send_telegram("🟢 BUY SIGNALS\n\n" + "\n━━━━━━━━━━━━━━━━━━\n\n".join(buys))
-    if sells:
-        send_telegram("🔴 SELL SIGNALS\n\n" + "\n━━━━━━━━━━━━━━━━━━\n\n".join(sells))
-    if watches:
-        send_telegram("👀 WATCH LIST\n\n" + "\n━━━━━━━━━━━━━━━━━━\n\n".join(watches))
+    detailed_text = "\n━━━━━━━━━━━━━━━━━━\n\n".join(text_signals)
+    if detailed_text:
+        send_telegram(detailed_text)
 
 
 if __name__ == "__main__":
