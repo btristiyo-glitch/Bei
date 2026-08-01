@@ -1,0 +1,81 @@
+ticker,signal,confidence,rank_score,trend,volume,bos,choch,bias
+KPIG,🔴 SELL,50,70,🔴 Bearish,1.9,False,False,neutral
+RATU,🔴 SELL,50,70,🔴 Bearish,1.9,False,False,neutral
+KLBF,WATCH,60,65,🔴 Strong Bearish,1.9,False,False,neutral
+ERAA,WATCH,55,65,🟢 Strong Bullish,2.5,False,False,neutral
+INCO,WATCH,55,65,🔴 Bearish,2.2,False,False,neutral
+INDF,WATCH,55,65,🟢 Strong Bullish,2.1,False,False,neutral
+MYOR,WATCH,55,60,🔴 Strong Bearish,1.9,True,False,bearish
+ACES,WATCH,50,55,🟢 Bullish,1.7,False,False,neutral
+GGRM,WATCH,50,55,🟢 Strong Bullish,1.7,False,False,neutral
+UNVR,WATCH,45,55,🟢 Bullish,2.0,False,False,neutral
+INKP,WATCH,50,50,🔴 Bearish,1.4,True,False,bullish
+ANTM,WATCH,50,50,🔴 Strong Bearish,1.1,False,False,neutral
+AMRT,WATCH,50,50,🔴 Strong Bearish,1.0,False,False,neutral
+BRMS,WATCH,50,50,🔴 Strong Bearish,0.6,False,False,neutral
+HEAL,WATCH,50,50,🔴 Strong Bearish,0.4,False,False,neutral
+SIDO,WATCH,40,50,🔴 Strong Bearish,2.7,False,False,neutral
+PTBA,WATCH,40,50,🔴 Strong Bearish,2.6,False,False,neutral
+MAPA,WATCH,45,45,🟢 Bullish,1.3,False,True,bullish
+AMMN,WATCH,45,45,🔴 Bearish,1.1,False,True,bullish
+MAPI,WATCH,45,45,🟢 Strong Bullish,0.1,False,False,neutral
+CBDK,WATCH,40,45,🔴 Bearish,1.7,False,False,neutral
+UNTR,WATCH,40,45,🟢 Bullish,1.6,False,False,neutral
+HRUM,WATCH,40,45,🔴 Bearish,1.5,False,False,neutral
+SCMA,WATCH,40,40,🔴 Bearish,1.4,False,False,neutral
+ADMR,WATCH,40,40,🔴 Bearish,1.2,False,False,neutral
+DEWA,WATCH,40,40,🟢 Bullish,1.2,False,False,neutral
+MBMA,WATCH,40,40,🔴 Strong Bearish,1.1,False,False,neutral
+PTRO,WATCH,40,40,🟢 Bullish,0.8,False,False,neutral
+RAJA,WATCH,40,40,🟢 Strong Bullish,0.8,False,False,neutral
+EMTK,WATCH,40,40,🔴 Bearish,0.7,False,False,neutral
+JSMR,WATCH,40,40,🔴 Bearish,0.7,False,False,neutral
+MEDC,WATCH,40,40,🔴 Bearish,0.7,False,False,neutral
+BBTN,WATCH,40,40,🔴 Bearish,0.5,False,False,neutral
+KIJA,WATCH,40,40,🔴 Bearish,0.5,False,True,bullish
+AADI,WATCH,35,40,🟢 Strong Bullish,1.6,False,False,neutral
+ASII,WATCH,35,35,🔴 Bearish,1.0,False,True,bullish
+AKRA,WATCH,35,35,🟢 Strong Bullish,0.9,False,False,neutral
+CPIN,WATCH,35,35,🔴 Bearish,0.9,False,False,neutral
+TOWR,WATCH,35,35,🔴 Bearish,0.9,False,False,neutral
+BUMI,WATCH,35,35,🔴 Bearish,0.8,False,False,neutral
+HRTA,WATCH,35,35,🔴 Strong Bearish,0.8,False,False,neutral
+GOTO,WATCH,35,35,🔴 Strong Bearish,0.5,False,False,neutral
+INTP,WATCH,30,30,🟢 Bullish,1.1,False,False,neutral
+MIKA,WATCH,30,30,🔴 Bearish,1.0,False,False,neutral
+ELSA,WATCH,30,30,🟢 Bullish,0.7,False,False,neutral
+BKSL,WATCH,30,30,🔴 Bearish,0.6,False,False,neutral
+BUKA,WATCH,30,30,🔴 Bearish,0.5,False,False,neutral
+CMRY,WATCH,25,30,🟢 Bullish,1.6,False,False,neutral
+ADRO,WATCH,25,25,🟢 Strong Bullish,1.4,False,False,neutral
+ITMG,WATCH,25,25,🟢 Strong Bullish,1.2,False,False,neutral
+BSDE,WATCH,25,25,🔴 Strong Bearish,1.1,False,False,neutral
+ISAT,WATCH,25,25,🔴 Strong Bearish,1.1,False,False,neutral
+SSIA,WATCH,25,25,🟢 Strong Bullish,0.9,False,False,neutral
+WIFI,WATCH,25,25,🟢 Bullish,0.9,False,False,neutral
+BRPT,WATCH,25,25,🟢 Bullish,0.8,False,False,neutral
+DSNG,WATCH,25,25,🟢 Bullish,0.8,False,False,neutral
+ENRG,WATCH,25,25,🔴 Bearish,0.8,False,False,neutral
+PWON,WATCH,25,25,🔴 Bearish,0.8,False,False,neutral
+TAPG,WATCH,25,25,🟢 Strong Bullish,0.8,False,False,neutral
+CUAN,WATCH,25,25,🔴 Strong Bearish,0.6,False,False,neutral
+INDY,WATCH,25,25,🔴 Bearish,0.6,False,False,neutral
+SMGR,WATCH,25,25,🔴 Strong Bearish,0.6,False,False,neutral
+EXCL,WATCH,25,25,🔴 Strong Bearish,0.5,False,False,neutral
+ARTO,WATCH,25,25,🟢 Bullish,0.3,False,False,neutral
+MDKA,WATCH,20,20,🔴 Bearish,0.5,False,False,neutral
+PGEO,WATCH,20,20,🟢 Bullish,0.5,False,False,neutral
+CTRA,WATCH,20,20,🔴 Bearish,0.4,False,False,neutral
+JPFA,WATCH,15,15,🔴 Bearish,1.1,False,False,neutral
+BBNI,WATCH,15,15,🔴 Bearish,1.0,False,False,neutral
+BBCA,WATCH,15,15,🟢 Bullish,0.9,False,False,neutral
+BBRI,WATCH,15,15,🔴 Bearish,0.9,False,False,neutral
+ICBP,WATCH,15,15,🟢 Bullish,0.9,False,False,neutral
+PANI,WATCH,15,15,🔴 Bearish,0.9,False,False,neutral
+TLKM,WATCH,15,15,🔴 Bearish,0.9,False,False,neutral
+PGAS,WATCH,15,15,🔴 Bearish,0.7,False,False,neutral
+BMRI,WATCH,15,15,🟢 Bullish,0.6,False,False,neutral
+TPIA,WATCH,15,15,🔴 Bearish,0.6,False,False,neutral
+ESSA,WATCH,15,15,🔴 Bearish,0.5,False,False,neutral
+SMRA,WATCH,15,15,🟢 Bullish,0.5,False,False,neutral
+PNLF,WATCH,15,15,🔴 Bearish,0.2,False,False,neutral

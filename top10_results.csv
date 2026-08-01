@@ -1,0 +1,11 @@
+ticker,signal,confidence,rank_score,trend,volume,bos,choch,bias
+KPIG,🔴 SELL,50,70,🔴 Bearish,1.9,False,False,neutral
+RATU,🔴 SELL,50,70,🔴 Bearish,1.9,False,False,neutral
+KLBF,WATCH,60,65,🔴 Strong Bearish,1.9,False,False,neutral
+ERAA,WATCH,55,65,🟢 Strong Bullish,2.5,False,False,neutral
+INCO,WATCH,55,65,🔴 Bearish,2.2,False,False,neutral
+INDF,WATCH,55,65,🟢 Strong Bullish,2.1,False,False,neutral
+MYOR,WATCH,55,60,🔴 Strong Bearish,1.9,True,False,bearish
+ACES,WATCH,50,55,🟢 Bullish,1.7,False,False,neutral
+GGRM,WATCH,50,55,🟢 Strong Bullish,1.7,False,False,neutral
+UNVR,WATCH,45,55,🟢 Bullish,2.0,False,False,neutral
