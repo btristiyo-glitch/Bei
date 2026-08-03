@@ -40,6 +40,6 @@ jobs:
           name: scan-results
           path: |
             scan_results.csv
-            top10_results.csv
+            top5_results.csv
             gainer_candidates.csv
           if-no-files-found: ignore
