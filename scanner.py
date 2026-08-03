@@ -4,7 +4,7 @@ import requests
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # =========================================================
 # CONFIG
@@ -16,7 +16,7 @@ CHAT_IDS = [x.strip() for x in CHAT_IDS_RAW.split(",") if x.strip()]
 STOCKS_FILE = "stocks.txt"
 ERROR_LOG_FILE = "error.log"
 OUTPUT_CSV = "scan_results.csv"
-TOP10_CSV = "top10_results.csv"
+TOP5_CSV = "top5_results.csv"
 GAINER_CSV = "gainer_candidates.csv"
 
 LOOKBACK = 180
@@ -34,8 +34,8 @@ GAINER_CONFIG = {
     "gap_min": 1.0,        # minimal gap open %
     "rvol_min": 2.0,       # harga harus dikejar volume
     "gain_min": 1.5,       # minimal gain intraday berjalan
-    "flow_min": 0,         # skema (opsional)
-    "top_n": 10,           # jumlah kandidat
+    "flow_min": 0,
+    "top_n": 5,            # 🟢 cuma kirim top 5
     "min_price": MIN_PRICE,
 }
 
@@ -125,13 +125,9 @@ def rvol(df, length=20):
     return float(vol.iloc[-1] / ma.iloc[-1])
 
 # =========================================================
-# LAPISAN 1: KANDIDAT TOP GAINER INTRADAY (BARU - PRIORITAS)
+# LAPISAN 1: KANDIDAT TOP GAINER INTRADAY
 # =========================================================
 def fetch_intraday(symbol):
-    """
-    Ambil batang 15-menit hari ini + close kemarin.
-    Return None kalau data intraday nggak valid/kosong.
-    """
     try:
         df = yf.download(symbol, period="3d", interval="15m",
                          auto_adjust=True, progress=False)
@@ -151,7 +147,6 @@ def fetch_intraday(symbol):
         high = float(todays["High"].max())
         low = float(todays["Low"].min())
 
-        # RVOL intraday: volume batang terakhir vs rata2 20 batang
         vol_ref = float(df["Volume"].rolling(20).mean().iloc[-1])
         rv = float(todays["Volume"].iloc[-1] / vol_ref) if vol_ref > 0 else 0
 
@@ -194,7 +189,6 @@ def gainer_score(snap):
     return int(min(100, score))
 
 def percent_from_range(snap):
-    """Seberapa dekat harga sekarang ke range high sesi (% buat target)."""
     rng = snap["high"] - snap["low"]
     if rng <= 0:
         return 100.0
@@ -232,7 +226,7 @@ def format_intraday_gainers(candidates):
     return "\n".join(lines)
 
 # =========================================================
-# LAPISAN 2: SWING HARIAN (DARi KODE AWAL KAMU)
+# LAPISAN 2: SWING HARIAN
 # =========================================================
 def get_trend(df):
     close = df["Close"].astype(float)
@@ -251,12 +245,6 @@ def get_trend(df):
     else:
         trend = "⚪ Neutral"
     return trend, e20, e50, e200
-
-# (Fungsi harian lainnya: market_regime_filter, find_pivots, detect_structure,
-#  detect_liquidity_sweep, candle_patterns, find_supply_demand, latest_zones,
-#  score_to_rank, confidence_score, calculate_signal, build_plan, format_signal,
-#  scan_one — DIPERTAHANKAN IDENTIK dengan kode asli kamu.
-#  Potong-penuh dari pastebin; di sini saya ringkas biar file jelas.)
 
 def market_regime_filter(df):
     close = df["Close"].astype(float)
@@ -485,8 +473,8 @@ def format_signal(ticker, result, plan):
         f"Structure : BOS {result['structure']['bos']} | CHOCH {result['structure']['choch']} | Bias {result['structure']['bias']}\n"
         f"Liquidity Sweep : Bull {sweep['bull_sweep']} | Bear {sweep['bear_sweep']}\n"
         f"Volume : {result['volume']}x\n"
-        f"Supply : {round(result['supply']['bot'])}-{round(result['supply']['top']) if result['supply'] else '-'}\n"
-        f"Demand : {round(result['demand']['bot'])}-{round(result['demand']['top']) if result['demand'] else '-'}\n"
+        f"Supply : {round(result['supply']['bot']) if result['supply'] else '-'}-{round(result['supply']['top']) if result['supply'] else '-'}\n"
+        f"Demand : {round(result['demand']['bot']) if result['demand'] else '-'}-{round(result['demand']['top']) if result['demand'] else '-'}\n"
     )
     if result["signal"] == "🟢 BUY":
         return (common + f"Entry : {plan['entry']}\nSL : {plan['sl']}\n"
@@ -536,6 +524,8 @@ def main():
         send_telegram("stocks.txt kosong.")
         return
 
+    now = datetime.now().strftime("%H:%M")
+
     # [1] PRIORITAS: top gainer intraday
     gainer_cands = scan_intraday_gainers(stocks)
     if gainer_cands:
@@ -545,7 +535,7 @@ def main():
     else:
         send_telegram("🚫 Tidak ada kandidat top gainer intraday saat ini.")
 
-    # [2] Lapisan kedua: swing harian (dari kode asli kamu)
+    # [2] Lapisan kedua: swing harian - cuma top 5
     daily_rows, daily_text = get_daily_signals(stocks)
     if not daily_rows:
         send_telegram("Tidak ada sinyal harian valid hari ini.")
@@ -553,13 +543,13 @@ def main():
 
     df_all = pd.DataFrame(daily_rows).sort_values(
         ["rank_score", "confidence", "volume"], ascending=False)
-    df_top10 = df_all.head(10).copy()
+    df_top5 = df_all.head(5).copy()
     df_all.to_csv(OUTPUT_CSV, index=False)
-    df_top10.to_csv(TOP10_CSV, index=False)
+    df_top5.to_csv(TOP5_CSV, index=False)
 
-    now = datetime.now().strftime("%d %b %H:%M")
-    summary = (f"📡 DAILY STOCK RANKING - {now} WIB\n\nTop 10 saham terbaik hari ini:\n\n")
-    for i, row in enumerate(df_top10.itertuples(index=False), start=1):
+    summary = (f"📡 DAILY STOCK RANKING - {now} WIB\n\n"
+               f"Top 5 saham terbaik hari ini:\n\n")
+    for i, row in enumerate(df_top5.itertuples(index=False), start=1):
         summary += (f"{i}. {row.ticker} - {row.signal} - "
                     f"Score {row.rank_score} - Conf {row.confidence}% - Vol {row.volume}x\n")
     send_telegram(summary)
